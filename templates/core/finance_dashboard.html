@@ -123,7 +123,7 @@
                                     </div>
                                 </div>
                                 <div class="progress progress-thin mt-2">
-                                    <div class="progress-bar" style="width: {{ trend.progress_pct }}%"></div>
+                                    <div class="progress-bar progress-bar-dynamic" style="--progress-width: {{ trend.progress_pct }}%;"></div>
                                 </div>
                             </li>
                         {% endfor %}

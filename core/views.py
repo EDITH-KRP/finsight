@@ -337,9 +337,15 @@ def auditor_dashboard(request):
 
     transactions_last_30 = Transaction.objects.filter(date__gte=thirty_days_ago)
 
-    total_transactions = transactions_last_30.count()
-    high_risk_count = transactions_last_30.filter(risk_score__gt=70).count()
-    average_risk_score = transactions_last_30.aggregate(avg=Avg('risk_score'))['avg'] or 0
+    # Fall back to all transactions if no recent ones exist (for demo/development)
+    if transactions_last_30.exists():
+        calculation_transactions = transactions_last_30
+    else:
+        calculation_transactions = Transaction.objects.all()
+
+    total_transactions = calculation_transactions.count()
+    high_risk_count = calculation_transactions.filter(risk_score__gt=70).count()
+    average_risk_score = calculation_transactions.aggregate(avg=Avg('risk_score'))['avg'] or 0
     alert_count = Alert.objects.filter(created_at__gte=thirty_days_ago).count()
 
     stats = {
@@ -363,9 +369,9 @@ def auditor_dashboard(request):
     }
 
     risk_distribution = [
-        transactions_last_30.filter(risk_score__lte=30).count(),
-        transactions_last_30.filter(risk_score__gt=30, risk_score__lte=70).count(),
-        transactions_last_30.filter(risk_score__gt=70).count(),
+        calculation_transactions.filter(risk_score__lte=30).count(),
+        calculation_transactions.filter(risk_score__gt=30, risk_score__lte=70).count(),
+        calculation_transactions.filter(risk_score__gt=70).count(),
     ]
 
     high_risk_transactions = Transaction.objects.filter(
@@ -376,11 +382,11 @@ def auditor_dashboard(request):
         model_name__in=['LedgerUpload', 'Transaction', 'Alert']
     ).select_related('user').order_by('-timestamp')[:5]
 
-    avg_transaction_amount = transactions_last_30.aggregate(avg=Avg('amount'))['avg'] or 0
-    repeated_descriptions = transactions_last_30.values('description').annotate(
+    avg_transaction_amount = calculation_transactions.aggregate(avg=Avg('amount'))['avg'] or 0
+    repeated_descriptions = calculation_transactions.values('description').annotate(
         count=Count('id')
     ).filter(count__gt=1).count()
-    distinct_ledgers = transactions_last_30.values('ledger_upload').distinct().count()
+    distinct_ledgers = calculation_transactions.values('ledger_upload').distinct().count()
 
     risk_metrics = [
         {
@@ -484,20 +490,25 @@ def reviewer_dashboard(request):
     """Reviewer dashboard with alert management and case handling"""
     if not (request.user.is_superuser or is_in_group(request.user, 'Reviewer') or is_in_group(request.user, 'Admin')):
         return redirect(role_redirect(request.user))
-    
+
     now = timezone.now()
     thirty_days_ago = now - timezone.timedelta(days=30)
-    
+
     my_alerts = Alert.objects.filter(
         assigned_to=request.user,
         created_at__gte=thirty_days_ago,
     ).select_related('transaction', 'transaction__ledger_upload').order_by('-created_at')
-    
+
+    # Calculate overall risk score from transactions in the period
+    recent_transactions = Transaction.objects.filter(date__gte=thirty_days_ago)
+    if recent_transactions.exists():
+        overall_risk_score = recent_transactions.aggregate(avg_risk=Avg('risk_score'))['avg_risk'] or 0
+    else:
+        overall_risk_score = Transaction.objects.aggregate(avg_risk=Avg('risk_score'))['avg_risk'] or 0
+
     stats = {
-        'risk_score': my_alerts.aggregate(avg_risk=Avg('transaction__risk_score'))['avg_risk'] or 0,
-        'risk_score_class': 'risk-high' if my_alerts.filter(transaction__risk_score__gte=70).exists() else (
-            'risk-medium' if my_alerts.filter(transaction__risk_score__gte=40).exists() else 'risk-low'
-        ),
+        'risk_score': overall_risk_score,
+        'risk_score_class': _determine_risk_class(overall_risk_score),
         'reviewed': my_alerts.filter(status='resolved').count(),
         'assigned': my_alerts.count(),
         'pending_review': my_alerts.filter(status='new').count(),
@@ -510,9 +521,11 @@ def reviewer_dashboard(request):
             )['avg_duration']
         ),
     }
-    stats['risk_score_class'] = _determine_risk_class(stats['risk_score'])
-    
+
+    # Get high-risk alerts assigned to the user
     high_risk_alerts = my_alerts.filter(transaction__risk_score__gte=70)[:10]
+
+    # Get recent notes and status breakdown
     recent_notes = my_alerts.exclude(description="").values(
         'title',
         'description',
@@ -529,11 +542,19 @@ def reviewer_dashboard(request):
         }
         for entry in status_counts
     ]
+
+    # Calculate risk distribution for charts
+    risk_distribution = [
+        recent_transactions.filter(risk_score__lte=30).count(),
+        recent_transactions.filter(risk_score__gt=30, risk_score__lte=70).count(),
+        recent_transactions.filter(risk_score__gt=70).count(),
+    ]
     
     return render(request, 'core/reviewer_dashboard.html', {
         'stats': stats,
         'high_risk_alerts': high_risk_alerts,
         'status_breakdown': status_breakdown,
+        'risk_distribution': risk_distribution,
         'recent_notes': [
             {
                 'title': note['title'],

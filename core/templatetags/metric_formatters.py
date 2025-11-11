@@ -12,6 +12,7 @@ def format_metric(value, fmt="number"):
         return "—"
 
     try:
+        # Ensure we work with a proper numeric value, not SafeString
         numeric_value = float(value)
     except (TypeError, ValueError):
         return str(value)

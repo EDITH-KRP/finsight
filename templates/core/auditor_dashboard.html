@@ -157,12 +157,25 @@
 </div>
 
 {% block extra_js %}
+{{ risk_distribution|json_script:"risk-distribution-data" }}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const chart = Chart.getChart('riskDistributionChart') || charts.riskDistribution;
-    if (chart) {
-        chart.data.datasets[0].data = {{ risk_distribution|safe }};
+document.addEventListener('DOMContentLoaded', function () {
+    const chart = Chart.getChart('riskDistributionChart') || (window.charts && window.charts.riskDistribution);
+    if (!chart) {
+        return;
+    }
+
+    const dataElement = document.getElementById('risk-distribution-data');
+    if (!dataElement) {
+        return;
+    }
+
+    try {
+        const distributionData = JSON.parse(dataElement.textContent);
+        chart.data.datasets[0].data = distributionData;
         chart.update();
+    } catch (error) {
+        console.error('Failed to parse risk distribution data', error);
     }
 });
 </script>

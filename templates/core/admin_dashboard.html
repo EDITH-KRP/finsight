@@ -136,7 +136,7 @@
                                     <div class="fw-semibold">{{ status.count }}</div>
                                 </div>
                                 <div class="progress" style="height: 5px;">
-                                    <div class="progress-bar" style="width: {{ status.percentage }}%"></div>
+                                    <div class="progress-bar progress-bar-dynamic" style="--progress-width: {{ status.percentage }}%;"></div>
                                 </div>
                             </li>
                         {% endfor %}

@@ -26,6 +26,10 @@ app.conf.beat_schedule = {
         'schedule': 86400.0,  # daily
         'kwargs': {'days': 30}
     },
+    'generate-scheduled-reports': {
+        'task': 'core.tasks.generate_scheduled_reports',
+        'schedule': 1800.0,  # every 30 minutes
+    },
 }
 
 # Auto-discover tasks in all installed apps
